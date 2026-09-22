@@ -370,16 +370,21 @@ if uploaded_file is not None:
         st.success(f"✅ Đã chuyển đổi thành công {len(df_result)} dòng BOM chuẩn ERP!")
         st.dataframe(df_result, use_container_width=True)
         
+        # Xuất file Excel an toàn 100% không bị lỗi float length
         output = io.BytesIO()
-        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df_result.to_excel(writer, sheet_name='B.O.M', index=False)
-            workbook  = writer.book
-            worksheet = writer.sheets['B.O.M']
-            header_format = workbook.add_format({'bold': True, 'bg_color': '#D9E1F2', 'border': 1})
-            for col_num, val in enumerate(df_result.columns.values):
-                worksheet.write(0, col_num, val, header_format)
-                max_len = max(df_result[val].astype(str).map(len).max(), len(val)) + 3
-                worksheet.set_column(col_num, col_num, min(max_len, 35))
+            ws = writer.sheets['B.O.M']
+            # Tự động căn chỉnh độ rộng cột
+            for col in ws.columns:
+                max_len = 0
+                col_letter = col[0].column_letter
+                for cell in col:
+                    if cell.value is not None:
+                        val_str = str(cell.value)
+                        if len(val_str) > max_len:
+                            max_len = len(val_str)
+                ws.column_dimensions[col_letter].width = min(max(max_len + 3, 12), 40)
 
         output.seek(0)
         st.download_button(
