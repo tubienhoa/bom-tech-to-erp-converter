@@ -4,78 +4,98 @@ import io
 import re
 
 st.set_page_config(
-    page_title="BOM Converter: EBOM to MBOM",
+    page_title="BOM Converter: EBOM to MBOM (New Template)",
     page_icon="🏭",
     layout="wide"
 )
 
-st.title("🏭 Chuyển Đổi BOM Kỹ Thuật (EBOM) Sang BOM ERP (MBOM)")
-st.caption("Chuẩn hóa theo Quy trình sản xuất QTSX_01 - QTSX_10 & Công thức hao hụt chuẩn")
+st.title("🏭 Chuyển Đổi BOM Kỹ Thuật Mới Sang BOM ERP")
+st.caption("Tương thích Template EBOM 5 Cấp bậc, Routing QTSX_01 - QTSX_10 & Công thức hao hụt chuẩn xưởng thép")
 
-# Tham số Sidebar
+# Sidebar cấu hình
 with st.sidebar:
     st.header("🔧 Cấu hình")
     cust_code = st.text_input("Mã Khách hàng (KKK):", value="STV", max_chars=5)
     default_uom_fg = st.selectbox("ĐVT Thành phẩm (FG):", ["Bộ", "Cái"], index=0)
     st.markdown("---")
     st.markdown("""
-    **Ma trận Routing tích hợp:**
+    **Quy chuẩn Routing tự động:**
     - **QTSX_01**: Cắt (`CUT`), Chấn/Uốn (`BD`)
     - **QTSX_02**: Hàn mài (`WD`), Phay tiện (`MC`)
     - **QTSX_03**: Sơn (`PNT`)
     - **QTSX_04**: Đóng gói (`PK`)
     - **QTSX_09**: Lắp ráp / Đóng PEM (`AS`)
+    - **QTSX_10**: Xi mạ (`PL`)
     """)
 
 def resolve_routing(row):
-    """Xác định QTSX và Mã công đoạn dựa trên checkbox từ Cột 30 đến 38 của BOM Kỹ thuật"""
-    has_cut = pd.notna(row[30])
-    has_bend = pd.notna(row[31])
-    has_weld = pd.notna(row[32])
-    has_paint = pd.notna(row[33])
-    has_plating = pd.notna(row[34])
-    has_pack = pd.notna(row[35])
-    has_mill = pd.notna(row[36])
-    has_lathe = pd.notna(row[37])
+    """Bóc tách Routing từ cột 31 đến 40 của Template BOM kỹ thuật mới"""
+    has_buy_out = pd.notna(row[31]) and str(row[31]).strip() != ''
+    has_cut     = pd.notna(row[32]) and str(row[32]).strip() != ''
+    has_bend    = pd.notna(row[33]) and str(row[33]).strip() != ''
+    has_weld    = pd.notna(row[34]) and str(row[34]).strip() != ''
+    has_mach    = pd.notna(row[35]) and str(row[35]).strip() != ''
+    has_form    = pd.notna(row[36]) and str(row[36]).strip() != ''
+    has_paint   = pd.notna(row[37]) and str(row[37]).strip() != ''
+    has_plate   = pd.notna(row[38]) and str(row[38]).strip() != ''
+    has_assy    = pd.notna(row[39]) and str(row[39]).strip() != ''
+    has_pack    = pd.notna(row[40]) and str(row[40]).strip() != ''
 
     stages = []
     qtsx = ""
-    
+
     if has_cut and has_bend:
         qtsx = "QTSX_01"
         stages.append("CUT, BD")
     elif has_cut:
-        qtsx = "QTSX_05" if not has_bend else "QTSX_01"
+        qtsx = "QTSX_05"
         stages.append("CUT")
     elif has_bend:
         stages.append("BD")
 
-    if has_weld and (has_mill or has_lathe):
+    if has_weld and has_mach:
         qtsx = "QTSX_02"
         stages.append("WD, MC")
     elif has_weld:
+        qtsx = "QTSX_06" if not qtsx else qtsx
         stages.append("WD")
-    elif has_mill or has_lathe:
+    elif has_mach:
+        qtsx = "QTSX_07" if not qtsx else qtsx
         stages.append("MC")
 
     if has_paint:
         stages.append("PNT")
+    if has_plate:
+        stages.append("PL")
+    if has_assy:
+        stages.append("AS")
     if has_pack:
         stages.append("PK")
 
-    return qtsx if qtsx else "QTSX_01", ", ".join(stages)
+    if not qtsx:
+        if has_paint:
+            qtsx = "QTSX_03"
+        elif has_pack:
+            qtsx = "QTSX_04"
+        elif has_assy:
+            qtsx = "QTSX_09"
+        elif has_plate:
+            qtsx = "QTSX_10"
 
-def parse_tech_bom(file_bytes, customer_code):
+    return qtsx, ", ".join(stages)
+
+def parse_tech_bom_new(file_bytes, customer_code):
     df_raw = pd.read_excel(file_bytes, sheet_name='Form', header=None)
-    
-    proj_raw = str(df_raw.iloc[1, 5]).strip() if pd.notna(df_raw.iloc[1, 5]) else "PROJECT"
+
+    # Lấy thông tin Header Dự án
+    proj_raw = str(df_raw.iloc[1, 6]).strip() if pd.notna(df_raw.iloc[1, 6]) else "PROJECT"
     pcode_match = re.search(r'([A-Za-z0-9\-]+)', proj_raw)
     pcode = pcode_match.group(1) if pcode_match else proj_raw
-    fg_name = str(df_raw.iloc[6, 5]).strip() if pd.notna(df_raw.iloc[6, 5]) else proj_raw
+    fg_name = str(df_raw.iloc[6, 6]).strip() if pd.notna(df_raw.iloc[6, 6]) else proj_raw
 
     erp_rows = []
-    
-    # 1. Dòng Thành phẩm Cấp A (FG)
+
+    # 1. Dòng Thành phẩm Level 0 (FG)
     erp_rows.append({
         'STT': 'A',
         'QTSX': '',
@@ -96,81 +116,88 @@ def parse_tech_bom(file_bytes, customer_code):
         'Công đoạn': ''
     })
 
-    current_sg_stt = 1
-    current_sub_stt = 1
-    
+    current_idx = [0, 0, 0, 0, 0]
+
+    # Duyệt từ row 7 trở đi
     r = 7
     while r < len(df_raw):
         row = df_raw.iloc[r]
-        
-        # Xác định Level thụt dòng (0: FG, 1: Cụm SG, 2: BTP/Part, 3: Phôi/PEM)
+
+        # Xác định Level dựa trên số thực/nguyên ở Cột 0 -> 4
         level = None
-        for l in range(4):
-            if pd.notna(row[l]):
-                level = l
+        for c in range(4, -1, -1):
+            val = row[c]
+            if pd.notna(val) and isinstance(val, (int, float)):
+                level = c
                 break
-                
-        if level is None and pd.isna(row[4]):
+
+        part_no = str(row[5]).strip() if pd.notna(row[5]) else ""
+        desc = str(row[6]).strip() if pd.notna(row[6]) else ""
+
+        if level is None or (not part_no and not desc):
             r += 1
             continue
 
-        part_no = str(row[4]).strip() if pd.notna(row[4]) else ""
-        desc = str(row[5]).strip() if pd.notna(row[5]) else ""
-        qty = row[17] if pd.notna(row[17]) else 1
-        uom = str(row[25]).strip() if pd.notna(row[25]) else "Cái"
-        mat_type = str(row[28]).strip().lower() if pd.notna(row[28]) else ""
-        thickness = row[12]
-        
-        # Áp dụng công thức tính khối lượng & % hao hụt
-        output_wt = float(row[21]) if pd.notna(row[21]) and str(row[21]).strip() != '' else 0.0
-        tot_raw_wt = float(row[19]) if pd.notna(row[19]) and str(row[19]).strip() != '' else 0.0
-        
+        current_idx[level] += 1
+        for lower in range(level + 1, 5):
+            current_idx[lower] = 0
+
+        # Tạo chuỗi STT phân cấp ERP (1, 1.1, 1.1.1...)
+        active_indices = [str(current_idx[i]) for i in range(1, level + 1) if current_idx[i] > 0]
+        stt_display = ".".join(active_indices) if active_indices else str(current_idx[0])
+
+        qty = row[18] if pd.notna(row[18]) else 1
+        uom = str(row[26]).strip() if pd.notna(row[26]) else "Cái"
+        mat_type = str(row[29]).strip().lower() if pd.notna(row[29]) else ""
+        thickness = row[13]
+
+        output_wt = float(row[23]) if pd.notna(row[23]) and str(row[23]).strip() != '' else 0.0
+        tot_raw_wt = float(row[20]) if pd.notna(row[20]) and str(row[20]).strip() != '' else 0.0
+
         loss_pct = ""
         if output_wt > 0 and tot_raw_wt > 0:
             loss_pct = round(((tot_raw_wt - output_wt) / output_wt) * 100, 2)
 
         qtsx_code, stage_text = resolve_routing(row)
 
-        # Cấp 1: Cụm lắp ráp chính (SG)
-        if level == 1:
+        # Cấp 1, 2, 3: Cụm lắp ráp / Bán thành phẩm (SG)
+        if level in [1, 2]:
             erp_rows.append({
-                'STT': str(current_sg_stt),
+                'STT': stt_display,
                 'QTSX': '',
                 'Mã sản phẩm': f"SG - {customer_code} - {part_no}",
                 'Loại': 'BTP',
-                'Tên sản phẩm': desc,
+                'Tên sản phẩm': desc if desc else part_no,
                 'SL sản phẩm': qty,
-                'ĐVT sp': 'Bộ',
+                'ĐVT sp': uom if uom else 'Bộ',
                 'Mã cũ': '', 'Mã NVL': '', 'Tên NVL': '', 'ĐVT (NVL)': '', 'Số lượng': '',
                 'ĐVT Kho': '', 'Số lượng kho': '', 'Số lượng setup': '', '% Tỉ lệ hao hụt': '',
-                'Công đoạn': 'WD'
+                'Công đoạn': stage_text if stage_text else 'WD'
             })
-            current_sub_stt = 1
 
-        # Cấp 2: BTP trung gian hoặc Chi tiết đơn tấm
-        elif level == 2:
-            stt_str = f"{current_sg_stt}.{current_sub_stt}"
-            has_child = (r + 1 < len(df_raw) and pd.notna(df_raw.iloc[r + 1, 3]))
+        # Cấp 3: Cụm chi tiết con hoặc Chi tiết đơn
+        elif level == 3:
+            has_child = (r + 1 < len(df_raw) and pd.notna(df_raw.iloc[r + 1, 4]) and isinstance(df_raw.iloc[r + 1, 4], (int, float)))
 
             if has_child:
-                # Cụm có lắp PEM / Chốt pin
+                # Cụm có lắp phụ kiện/PEM
                 erp_rows.append({
-                    'STT': stt_str,
+                    'STT': stt_display,
                     'QTSX': '',
                     'Mã sản phẩm': f"SG - {customer_code} - {part_no}",
                     'Loại': 'BTP',
                     'Tên sản phẩm': desc if desc else f"CỤM {part_no}",
                     'SL sản phẩm': qty,
-                    'ĐVT sp': 'Cái',
+                    'ĐVT sp': uom,
                     'Mã cũ': '', 'Mã NVL': '', 'Tên NVL': '', 'ĐVT (NVL)': '', 'Số lượng': '',
                     'ĐVT Kho': '', 'Số lượng kho': '', 'Số lượng setup': '', '% Tỉ lệ hao hụt': '',
-                    'Công đoạn': ''
+                    'Công đoạn': stage_text
                 })
             else:
-                # Chi tiết tấm đơn cắt/chấn -> QTSX_01
+                # Chi tiết đơn tấm không có phụ kiện đi kèm -> QTSX_01
                 erp_rows.append({
-                    'STT': stt_str,
-                    'QTSX': 'QTSX_01',
+                    'STT': stt_display,
+                    'QTSX': qtsx_code if qtsx_code else 'QTSX_01',
                     'Mã sản phẩm': f"SG - {customer_code} - {part_no}",
                     'Loại': 'BTP',
                     'Tên sản phẩm': desc if desc else part_no,
@@ -187,12 +214,11 @@ def parse_tech_bom(file_bytes, customer_code):
                     '% Tỉ lệ hao hụt': loss_pct,
                     'Công đoạn': stage_text if stage_text else 'CUT, BD'
                 })
-            current_sub_stt += 1
 
-        # Cấp 3: Chi tiết phôi hoặc Fasteners (PEM, Bulong, Tán)
-        elif level == 3:
+        # Cấp 4: Phôi thép tấm hoặc Vật tư phụ (PEM, Pin, Bulong)
+        elif level == 4:
             if "phụ" in mat_type or "fa" in part_no.lower():
-                # Phụ kiện lắp ráp / ép PEM -> QTSX_09
+                # Vật tư phụ tiêu hao (Đóng PEM/Lắp ráp)
                 erp_rows.append({
                     'STT': '',
                     'QTSX': '',
@@ -213,13 +239,13 @@ def parse_tech_bom(file_bytes, customer_code):
                     'Công đoạn': 'ĐÓNG PEM'
                 })
             else:
-                # Phôi tấm kim loại -> QTSX_01
+                # Phôi thép tấm gia công -> QTSX_01
                 erp_rows.append({
                     'STT': '',
-                    'QTSX': 'QTSX_01',
-                    'Mã sản phẩm': f"PT - {customer_code} - {part_no}.01",
+                    'QTSX': qtsx_code if qtsx_code else 'QTSX_01',
+                    'Mã sản phẩm': f"PT - {customer_code} - {part_no}",
                     'Loại': '',
-                    'Tên sản phẩm': '',
+                    'Tên sản phẩm': desc if desc else '',
                     'SL sản phẩm': qty,
                     'ĐVT sp': uom,
                     'Mã cũ': '',
@@ -237,12 +263,12 @@ def parse_tech_bom(file_bytes, customer_code):
 
     return pd.DataFrame(erp_rows)
 
-uploaded_file = st.file_uploader("Tải lên file BOM Kỹ thuật (.xlsx)", type=["xlsx"])
+uploaded_file = st.file_uploader("Tải lên file BOM Kỹ thuật mới (.xlsx)", type=["xlsx"])
 
 if uploaded_file is not None:
     try:
-        df_result = parse_tech_bom(uploaded_file, cust_code)
-        st.success(f"✅ Đã xử lý {len(df_result)} dòng BOM theo đúng quy chuẩn QTSX và Công thức hao hụt.")
+        df_result = parse_tech_bom_new(uploaded_file, cust_code)
+        st.success(f"✅ Đã xử lý thành công {len(df_result)} dòng BOM chuẩn ERP!")
         st.dataframe(df_result, use_container_width=True)
 
         output = io.BytesIO()
@@ -255,7 +281,7 @@ if uploaded_file is not None:
                 worksheet.write(0, col_num, val, header_format)
                 max_len = max(df_result[val].astype(str).map(len).max(), len(val)) + 3
                 worksheet.set_column(col_num, col_num, min(max_len, 35))
-                
+
         output.seek(0)
         st.download_button(
             label="📥 Tải xuống file BOM ERP (.xlsx)",
