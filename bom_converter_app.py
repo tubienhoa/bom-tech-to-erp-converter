@@ -9,8 +9,8 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("🏭 Chuyển Đổi BOM Kỹ Thuật Sang BOM ERP (Kiểm Tra Chặt Chẽ)")
-st.caption("Tự động bóc tách phân cấp MỤC động, kiểm soát tính hợp lệ của Template và xuất dữ liệu MBOM chuẩn ERP")
+st.title("🏭 Chuyển Đổi BOM Kỹ Thuật Sang BOM ERP (Kiểm Tra Chặt Chẽ 100%)")
+st.caption("Tự động nhận diện cấp MỤC linh hoạt & Kiểm tra đối soát tuần tự 35 cột cố định bằng thuật toán LCS")
 
 # Sidebar cấu hình
 with st.sidebar:
@@ -20,116 +20,216 @@ with st.sidebar:
     mat_spec_default = st.text_input("Mã phân loại thép (NVL Code Prefix):", value="S01")
     st.markdown("---")
     st.markdown("""
-    **Cơ chế kiểm soát dữ liệu:**
-    - Tự động nhận diện số cấp của vùng cột `MỤC` (từ cột 0 đến trước `MÃ SỐ CHI TIẾT`).
-    - Chuẩn hóa khoảng trắng và ký tự xuống dòng (`\n`) để nhận diện chính xác 100% tiêu đề các cột cố định.
-    - Cảnh báo chi tiết từng dòng nếu thiếu dữ liệu, sai số lượng hoặc thiếu kích thước phôi.
+    **Cơ chế kiểm soát Template & Dữ liệu:**
+    - **Vùng cột `MỤC`**: Tự động co giãn linh hoạt theo số cấp thụt lề thực tế (từ cột A đến trước `MÃ SỐ CHI TIẾT`).
+    - **Khóa cứng 35 cột cố định**: Đối soát 1-1 từng cột từ `MÃ SỐ CHI TIẾT` đến `Đóng gói (PK)`. Bất kỳ cột nào bị xóa, chèn thêm, đảo vị trí hoặc đổi tên đều bị chỉ đích danh.
+    - **Kiểm tra dữ liệu dòng**: Cảnh báo chính xác tọa độ dòng/cột bị thiếu thông số hoặc sai định dạng.
     """)
 
+# Danh mục chuẩn 35 cột cố định tính từ MÃ SỐ CHI TIẾT (Offset +0 đến +34)
+EXPECTED_FIXED_COLS = [
+    (0, "MÃ SỐ CHI TIẾT", "", ["MÃ SỐ CHI TIẾT", "MÃ CHI TIẾT"]),
+    (1, "MÔ TẢ", "", ["MÔ TẢ"]),
+    (2, "CHIỀU DÀI (mm)", "mm", ["CHIỀU DÀI"]),
+    (3, "CHIỀU DÀI (inch)", "inch", ["INCH"]),
+    (4, "CHIỀU RỘNG mm(A)", "mm(A)", ["CHIỀU RỘNG"]),
+    (5, "CHIỀU RỘNG inch(A)", "inch(A)", ["INCH(A)"]),
+    (6, "CHIỀU RỘNG mm(B)", "mm(B)", ["MM(B)"]),
+    (7, "CHIỀU RỘNG inch(B)", "inch(B)", ["INCH(B)"]),
+    (8, "ĐỘ DÀY (mm)", "mm", ["ĐỘ DÀY"]),
+    (9, "ĐỘ DÀY (inch)", "inch", ["INCH"]),
+    (10, "LOẠI VẬT LIỆU (Nhóm)", "", ["LOẠI VẬT LIỆU"]),
+    (11, "KHỐI LƯỢNG RIÊNG (g/cm3)", "", ["KHỐI LƯỢNG RIÊNG"]),
+    (12, "TỈ LỆ HAO HỤT", "", ["TỈ LỆ HAO HỤT", "TỶ LỆ HAO HỤT"]),
+    (13, "SỐ LƯỢNG", "", ["SỐ LƯỢNG"]),
+    (14, "KHỐI LƯỢNG NGUYÊN LIỆU (kg)", "", ["KHỐI LƯỢNG NGUYÊN LIỆU"]),
+    (15, "TỔNG KL NGUYÊN LIỆU (kg)", "", ["TỔNG KL NGUYÊN LIỆU"]),
+    (16, "KHỐI LƯỢNG THÀNH PHẨM (lbs)", "", ["KHỐI LƯỢNG THÀNH PHẨM (LBS)", "(LBS)"]),
+    (17, "KHỐI LƯỢNG THÀNH PHẨM (kg)", "", ["KHỐI LƯỢNG THÀNH PHẨM (KG)"]),
+    (18, "TỔNG KL THÀNH PHẨM (kg)", "", ["TỔNG KL THÀNH PHẨM"]),
+    (19, "DIỆN TÍCH BỀ MẶT SƠN (m2)", "", ["DIỆN TÍCH BỀ MẶT SƠN"]),
+    (20, "TỔNG DIỆN TÍCH BỀ MẶT SƠN (m2)", "", ["TỔNG DIỆN TÍCH BỀ MẶT SƠN"]),
+    (21, "ĐƠN VỊ TÍNH", "", ["ĐƠN VỊ TÍNH"]),
+    (22, "GHI CHÚ", "", ["GHI CHÚ"]),
+    (23, "HOÀN THIỆN BỀ MẶT", "", ["HOÀN THIỆN BỀ MẶT"]),
+    (24, "LOẠI VẬT TƯ / VẬT LIỆU", "", ["LOẠI VẬT TƯ", "LOẠI VẬT LIỆU"]),
+    (25, "MÁC VẬT TƯ", "", ["MÁC VẬT TƯ"]),
+    (26, "Cắt (CUT)", "", ["CẮT", "(CUT)"]),
+    (27, "Chấn/uốn (BD)", "", ["CHẤN", "UỐN", "(BD)"]),
+    (28, "Hàn (WD)", "", ["HÀN", "(WD)"]),
+    (29, "Phay tiện (MC)", "", ["PHAY", "TIỆN", "(MC)"]),
+    (30, "Dập tạo hình (FM)", "", ["DẬP", "(FM)"]),
+    (31, "Sơn (PNT)", "", ["SƠN", "(PNT)"]),
+    (32, "Xi mạ (PL)", "", ["XI MẠ", "(PL)"]),
+    (33, "Lắp ráp (AS)", "", ["LẮP RÁP", "(AS)"]),
+    (34, "Đóng gói (PK)", "", ["ĐÓNG GÓI", "(PK)"])
+]
+
 def clean_header_str(val):
-    """Chuẩn hóa chuỗi tiêu đề, loại bỏ ký tự ngắt dòng \n, \r và khoảng trắng thừa"""
+    """Chuẩn hóa chuỗi tiêu đề, loại bỏ ký tự xuống dòng \n, \r và khoảng trắng thừa"""
     if pd.isna(val):
         return ""
-    return re.sub(r'[\r\n\s]+', ' ', str(val)).strip().upper()
+    return re.sub(r'[\r\n\s]+', ' ', str(val)).strip()
+
+def excel_col_name(n):
+    """Đổi chỉ số cột (0-indexed) sang ký hiệu cột Excel (A, B, ..., Z, AA, AB...)"""
+    name = ""
+    while n >= 0:
+        name = chr(n % 26 + 65) + name
+        n = n // 26 - 1
+    return name
+
+def match_col_spec(h_main, h_sub, spec):
+    """Kiểm tra tiêu đề chính và tiêu đề phụ (đơn vị mm/inch) có khớp với đặc tả cột thứ offset hay không"""
+    offset, label, req_sub, kw_list = spec
+    h_main_up = h_main.upper()
+    h_sub_up = h_sub.upper()
+    
+    if req_sub:
+        if req_sub.upper() != h_sub_up:
+            return False
+        if h_main_up and not any(k in h_main_up for k in kw_list):
+            return False
+        return True
+    else:
+        # Phân biệt chặt các cột có tên gần giống nhau
+        if offset == 15 and "TỔNG" not in h_main_up:
+            return False
+        if offset == 14 and "TỔNG" in h_main_up:
+            return False
+        if offset == 18 and "TỔNG" not in h_main_up:
+            return False
+        if offset == 17 and ("TỔNG" in h_main_up or "LBS" in h_main_up):
+            return False
+        if offset == 16 and "LBS" not in h_main_up:
+            return False
+        if offset == 20 and "TỔNG" not in h_main_up:
+            return False
+        if offset == 19 and "TỔNG" in h_main_up:
+            return False
+        if offset == 31 and "DIỆN TÍCH" in h_main_up:
+            return False
+        return any(k in h_main_up for k in kw_list)
 
 def validate_and_find_columns(df_raw):
     """
-    Kiểm tra tính hợp lệ của Template BOM:
-    - Tìm vị trí cột MÃ SỐ CHI TIẾT
-    - Vùng trước đó là MỤC (cấp thụt lề động)
-    - Kiểm tra danh sách các cột cố định từ MÃ SỐ CHI TIẾT đến cuối
+    Thuật toán LCS (Longest Common Subsequence) đối soát chặt chẽ toàn bộ 35 cột cố định:
+    - Tự động phát hiện chính xác bất kỳ cột nào bị xóa, bị đổi tên, đảo vị trí hoặc chèn thêm.
     """
     errors = []
     
-    # 1. Tìm hàng tiêu đề (thông thường là hàng index 4)
-    header_row_idx = None
-    for r in range(min(15, len(df_raw))):
-        row_str = [clean_header_str(x) for x in df_raw.iloc[r] if pd.notna(x)]
-        if any("MÃ SỐ CHI TIẾT" in x or "MÃ CHI TIẾT" in x for x in row_str):
-            header_row_idx = r
+    # 1. Tìm dòng tiêu đề chứa MÃ SỐ CHI TIẾT
+    header_idx = None
+    for r in range(min(20, len(df_raw))):
+        row_vals = [clean_header_str(x).upper() for x in df_raw.iloc[r] if pd.notna(x)]
+        if any("MÃ SỐ CHI TIẾT" in x or "MÃ CHI TIẾT" in x for x in row_vals):
+            header_idx = r
             break
             
-    if header_row_idx is None:
-        errors.append("Không tìm thấy hàng tiêu đề chứa cột 'MÃ SỐ CHI TIẾT' trong 15 dòng đầu tiên.")
-        return None, errors
-
-    header_row = df_raw.iloc[header_row_idx]
-    
+    if header_idx is None:
+        return None, ["Không tìm thấy dòng tiêu đề chứa cột **'MÃ SỐ CHI TIẾT'** trong 20 dòng đầu tiên của sheet 'Form'."]
+        
     # 2. Định vị cột MÃ SỐ CHI TIẾT
-    idx_part_no = None
-    for c in range(len(header_row)):
-        val = clean_header_str(header_row[c])
-        if "MÃ SỐ CHI TIẾT" in val or "MÃ CHI TIẾT" in val:
-            idx_part_no = c
+    idx_part = None
+    for c in range(df_raw.shape[1]):
+        if any(k in clean_header_str(df_raw.iloc[header_idx, c]).upper() for k in ["MÃ SỐ CHI TIẾT", "MÃ CHI TIẾT"]):
+            idx_part = c
             break
             
-    if idx_part_no is None:
-        errors.append("Không tìm thấy cột 'MÃ SỐ CHI TIẾT'.")
+    if idx_part is None or idx_part < 1:
+        return None, ["Không tìm thấy cột **'MÃ SỐ CHI TIẾT'** hoặc thiếu vùng cột phân cấp **'MỤC'** phía trước."]
+        
+    muc_header = clean_header_str(df_raw.iloc[header_idx, 0]).upper()
+    if "MỤC" not in muc_header:
+        errors.append(f"Cột A (Dòng {header_idx + 1}) phải là tiêu đề **'MỤC'**, hiện tại đang là **'{clean_header_str(df_raw.iloc[header_idx, 0])}'**.")
+
+    # 3. Thu thập danh sách các cột thực tế từ MÃ SỐ CHI TIẾT đến hết
+    actual_cols = []
+    for c in range(idx_part, df_raw.shape[1]):
+        hm = clean_header_str(df_raw.iloc[header_idx, c])
+        hs = clean_header_str(df_raw.iloc[header_idx + 1, c]) if header_idx + 1 < len(df_raw) else ""
+        actual_cols.append((c, hm, hs))
+        
+    # 4. Đối soát chuỗi 35 cột cố định bằng Quy hoạch động (LCS)
+    M = len(EXPECTED_FIXED_COLS)
+    N = len(actual_cols)
+    dp = [[0] * (N + 1) for _ in range(M + 1)]
+    
+    for i in range(M - 1, -1, -1):
+        for j in range(N - 1, -1, -1):
+            if match_col_spec(actual_cols[j][1], actual_cols[j][2], EXPECTED_FIXED_COLS[i]):
+                dp[i][j] = 1 + dp[i + 1][j + 1]
+            else:
+                dp[i][j] = max(dp[i + 1][j], dp[i][j + 1])
+                
+    i, j = 0, 0
+    missing_specs = []
+    extra_actuals = []
+    
+    while i < M and j < N:
+        if match_col_spec(actual_cols[j][1], actual_cols[j][2], EXPECTED_FIXED_COLS[i]):
+            i += 1
+            j += 1
+        elif dp[i + 1][j] >= dp[i][j + 1]:
+            exp_col_letter = excel_col_name(idx_part + EXPECTED_FIXED_COLS[i][0])
+            missing_specs.append((EXPECTED_FIXED_COLS[i][0], EXPECTED_FIXED_COLS[i][1], exp_col_letter))
+            i += 1
+        else:
+            col_let = excel_col_name(actual_cols[j][0])
+            extra_actuals.append((col_let, actual_cols[j][1] or actual_cols[j][2]))
+            j += 1
+            
+    while i < M:
+        exp_col_letter = excel_col_name(idx_part + EXPECTED_FIXED_COLS[i][0])
+        missing_specs.append((EXPECTED_FIXED_COLS[i][0], EXPECTED_FIXED_COLS[i][1], exp_col_letter))
+        i += 1
+    while j < N:
+        col_let = excel_col_name(actual_cols[j][0])
+        extra_actuals.append((col_let, actual_cols[j][1] or actual_cols[j][2]))
+        j += 1
+        
+    for offset, label, exp_col_letter in missing_specs:
+        errors.append(f"Bị xóa hoặc sai tên cột bắt buộc: **'{label}'** (Vị trí chuẩn: Cột **{exp_col_letter}** - đứng thứ {offset + 1} tính từ MÃ SỐ CHI TIẾT).")
+        
+    for col_let, val_name in extra_actuals:
+        errors.append(f"Phát hiện cột lạ / sai vị trí chuẩn tại Cột **{col_let}**: **'{val_name}'**.")
+        
+    if errors:
         return None, errors
 
-    # Vùng cột MỤC là từ 0 đến idx_part_no - 1
-    num_level_cols = idx_part_no
-    if num_level_cols < 1:
-        errors.append(f"Cột 'MÃ SỐ CHI TIẾT' nằm ở vị trí đầu tiên (cột {idx_part_no}), không có vùng cột 'MỤC' phía trước.")
-
-    # 3. Định vị và kiểm tra các cột cố định
-    col_mapping = {'level_zone_end': idx_part_no, 'part_no': idx_part_no}
-    
-    required_keywords = [
-        ('desc', ['MÔ TẢ'], "MÔ TẢ"),
-        ('length', ['CHIỀU DÀI'], "CHIỀU DÀI"),
-        ('width', ['CHIỀU RỘNG'], "CHIỀU RỘNG"),
-        ('thickness', ['ĐỘ DÀY'], "ĐỘ DÀY"),
-        ('qty', ['SỐ LƯỢNG'], "SỐ LƯỢNG"),
-        ('tot_raw_wt', ['TỔNG KL NGUYÊN LIỆU', 'KL NGUYÊN LIỆU'], "TỔNG KL NGUYÊN LIỆU (kg)"),
-        ('uom', ['ĐƠN VỊ TÍNH'], "ĐƠN VỊ TÍNH"),
-        ('mat_type', ['LOẠI VẬT TƯ', 'LOẠI VẬT LIỆU'], "LOẠI VẬT TƯ")
-    ]
-    
-    for key, kw_list, label in required_keywords:
-        found_c = None
-        for c in range(idx_part_no + 1, len(header_row)):
-            val = clean_header_str(header_row[c])
-            if any(kw in val for kw in kw_list):
-                found_c = c
-                break
-        if found_c is not None:
-            col_mapping[key] = found_c
-        else:
-            errors.append(f"Thiếu cột bắt buộc: '{label}' phía sau cột MÃ SỐ CHI TIẾT.")
-
-    # Cột chiều rộng phụ (W_B) cho thép hộp (nếu có ở hàng sub-header)
-    for c in range(idx_part_no + 1, len(header_row)):
-        if len(df_raw) > header_row_idx + 1:
-            v5 = clean_header_str(df_raw.iloc[header_row_idx + 1, c]).lower()
-            if "mm(b)" in v5:
-                col_mapping['width_b'] = c
-                break
-
-    # 4. Định vị các cột Quy trình sản xuất (Routing)
-    routing_keys = [
-        ('CUT', ['CẮT', '(CUT)'], 'QTSX_05', False),
-        ('BD', ['CHẤN', 'UỐN', '(BD)'], 'QTSX_01', False),
-        ('WD', ['HÀN', '(WD)'], 'QTSX_06', False),
-        ('MC', ['PHAY', 'TIỆN', '(MC)'], 'QTSX_07', False),
-        ('FM', ['DẬP', '(FM)'], 'QTSX_08', False),
-        ('PNT', ['SƠN', '(PNT)'], 'QTSX_03', True),   # Gia công ngoài
-        ('PL', ['XI MẠ', 'MẠ', '(PL)'], 'QTSX_10', True), # Gia công ngoài
-        ('AS', ['LẮP RÁP', '(AS)'], 'QTSX_09', False),
-        ('PK', ['ĐÓNG GÓI', '(PK)'], 'QTSX_04', False)
-    ]
-    
-    col_mapping['routings'] = []
-    for code, kws, qtsx, is_outside in routing_keys:
-        for c in range(idx_part_no + 1, len(header_row)):
-            val = clean_header_str(header_row[c])
-            if any(kw in val for kw in kws):
-                col_mapping['routings'].append({
-                    'col': c, 'code': code, 'qtsx': qtsx, 'outside': is_outside, 'name': val
-                })
-                break
-
-    return {'header_row': header_row_idx, 'cols': col_mapping}, errors
+    # Khi toàn bộ 35 cột cố định khớp 100%, ánh xạ chính xác tuyệt đối theo offset chuẩn
+    col_mapping = {
+        'level_zone_end': idx_part,
+        'part_no': idx_part + 0,
+        'desc': idx_part + 1,
+        'length': idx_part + 2,
+        'width': idx_part + 4,
+        'width_b': idx_part + 6,
+        'thickness': idx_part + 8,
+        'mat_group': idx_part + 10,
+        'density': idx_part + 11,
+        'loss_rate': idx_part + 12,
+        'qty': idx_part + 13,
+        'unit_raw_wt': idx_part + 14,
+        'tot_raw_wt': idx_part + 15,
+        'uom': idx_part + 21,
+        'note': idx_part + 22,
+        'surface': idx_part + 23,
+        'mat_type': idx_part + 24,
+        'mat_spec': idx_part + 25,
+        'routings': [
+            {'col': idx_part + 26, 'code': 'CUT', 'qtsx': 'QTSX_05', 'outside': False, 'name': 'Cắt (CUT)'},
+            {'col': idx_part + 27, 'code': 'BD',  'qtsx': 'QTSX_01', 'outside': False, 'name': 'Chấn/uốn (BD)'},
+            {'col': idx_part + 28, 'code': 'WD',  'qtsx': 'QTSX_06', 'outside': False, 'name': 'Hàn (WD)'},
+            {'col': idx_part + 29, 'code': 'MC',  'qtsx': 'QTSX_07', 'outside': False, 'name': 'Phay tiện (MC)'},
+            {'col': idx_part + 30, 'code': 'FM',  'qtsx': 'QTSX_08', 'outside': False, 'name': 'Dập tạo hình (FM)'},
+            {'col': idx_part + 31, 'code': 'PNT', 'qtsx': 'QTSX_03', 'outside': True,  'name': 'Sơn (PNT)'},
+            {'col': idx_part + 32, 'code': 'PL',  'qtsx': 'QTSX_10', 'outside': True,  'name': 'Xi mạ (PL)'},
+            {'col': idx_part + 33, 'code': 'AS',  'qtsx': 'QTSX_09', 'outside': False, 'name': 'Lắp ráp (AS)'},
+            {'col': idx_part + 34, 'code': 'PK',  'qtsx': 'QTSX_04', 'outside': False, 'name': 'Đóng gói (PK)'}
+        ]
+    }
+    return {'header_row': header_idx, 'cols': col_mapping}, []
 
 def get_raw_mat_info(item, mat_spec_code="S01"):
     """Tạo Tên NVL, Quy cách Phôi và Mã Master Data NVL chuẩn"""
@@ -179,12 +279,21 @@ def parse_and_validate_bom(df_raw, cfg, customer_code="STV", mat_spec_code="S01"
     for r in range(start_row, len(df_raw)):
         row = df_raw.iloc[r]
         
+        # Dừng nếu gặp dòng TOTAL ở cuối bảng BOM
+        first_cell_str = str(row[0]).strip().upper() if pd.notna(row[0]) else ""
+        if "TOTAL" in first_cell_str or "TÍNH KHỐI LƯỢNG" in str(row[cols['unit_raw_wt']]).upper():
+            break
+
         # 1. Xác định cấp độ Level từ vùng cột MỤC (từ 0 đến num_level_cols - 1)
         found_levels = []
         for c in range(num_level_cols):
             val = row[c]
-            if pd.notna(val) and isinstance(val, (int, float)):
-                found_levels.append(c)
+            if pd.notna(val) and str(val).strip() != '':
+                if isinstance(val, (int, float)):
+                    found_levels.append(c)
+                else:
+                    col_let = excel_col_name(c)
+                    row_errors.append(f"Dòng Excel {r + 1} (Cột {col_let}): Giá trị cấp MỤC '{val}' không hợp lệ (phải là số).")
                 
         part_no = str(row[cols['part_no']]).strip() if pd.notna(row[cols['part_no']]) else ""
         desc = str(row[cols['desc']]).strip() if pd.notna(row[cols['desc']]) else ""
@@ -195,10 +304,11 @@ def parse_and_validate_bom(df_raw, cfg, customer_code="STV", mat_spec_code="S01"
             
         # Kiểm tra tính hợp lệ của Level
         if len(found_levels) == 0:
-            row_errors.append(f"Dòng Excel {r + 1}: Không xác định được cấp độ MỤC (các cột MỤC từ A đến trước MÃ SỐ CHI TIẾT đều trống).")
+            row_errors.append(f"Dòng Excel {r + 1} [{part_no or desc}]: Chưa điền số thứ tự cấp MỤC (từ Cột A đến Cột {excel_col_name(num_level_cols - 1)} đều trống).")
             continue
         elif len(found_levels) > 1:
-            row_errors.append(f"Dòng Excel {r + 1}: Có {len(found_levels)} cấp độ MỤC được điền cùng lúc trên một dòng.")
+            cols_str = ", ".join(excel_col_name(c) for c in found_levels)
+            row_errors.append(f"Dòng Excel {r + 1} [{part_no or desc}]: Điền trùng lặp nhiều cột MỤC cùng lúc tại các cột ({cols_str}).")
             continue
             
         level = found_levels[0]
@@ -215,27 +325,31 @@ def parse_and_validate_bom(df_raw, cfg, customer_code="STV", mat_spec_code="S01"
             try:
                 qty = float(qty_val)
                 if qty <= 0:
-                    row_errors.append(f"Dòng Excel {r + 1} [{part_no or desc}]: Số lượng '{qty_val}' phải lớn hơn 0.")
+                    col_let = excel_col_name(cols['qty'])
+                    row_errors.append(f"Dòng Excel {r + 1} [{part_no or desc}] - Cột {col_let}: Số lượng '{qty_val}' phải lớn hơn 0.")
             except:
-                row_errors.append(f"Dòng Excel {r + 1} [{part_no or desc}]: Số lượng '{qty_val}' không phải là định dạng số.")
+                col_let = excel_col_name(cols['qty'])
+                row_errors.append(f"Dòng Excel {r + 1} [{part_no or desc}] - Cột {col_let}: Số lượng '{qty_val}' không phải là số hợp lệ.")
                 qty = 1
 
         # Lấy thông tin kích thước và khối lượng
-        L = row[cols['length']] if cols.get('length') and pd.notna(row[cols['length']]) else None
-        W = row[cols['width']] if cols.get('width') and pd.notna(row[cols['width']]) else None
-        T = row[cols['thickness']] if cols.get('thickness') and pd.notna(row[cols['thickness']]) else None
-        W_B = row[cols['width_b']] if cols.get('width_b') and pd.notna(row[cols['width_b']]) else None
+        L = row[cols['length']] if pd.notna(row[cols['length']]) else None
+        W = row[cols['width']] if pd.notna(row[cols['width']]) else None
+        T = row[cols['thickness']] if pd.notna(row[cols['thickness']]) else None
+        W_B = row[cols['width_b']] if pd.notna(row[cols['width_b']]) else None
         
-        tot_raw_wt = row[cols['tot_raw_wt']] if cols.get('tot_raw_wt') and pd.notna(row[cols['tot_raw_wt']]) else None
-        uom = str(row[cols['uom']]).strip() if cols.get('uom') and pd.notna(row[cols['uom']]) else default_uom
-        mat_type = str(row[cols['mat_type']]).strip() if cols.get('mat_type') and pd.notna(row[cols['mat_type']]) else ""
+        tot_raw_wt = row[cols['tot_raw_wt']] if pd.notna(row[cols['tot_raw_wt']]) else None
+        uom = str(row[cols['uom']]).strip() if pd.notna(row[cols['uom']]) else default_uom
+        mat_type = str(row[cols['mat_type']]).strip() if pd.notna(row[cols['mat_type']]) else ""
 
-        # Kiểm tra kích thước phôi với chi tiết tấm
+        # Kiểm tra kích thước phôi với chi tiết thép gia công
         if "thép tấm" in desc.lower() and level > 0:
             if T is None:
-                row_errors.append(f"Dòng Excel {r + 1} [{part_no}]: Là Thép tấm nhưng thiếu giá trị tại cột 'ĐỘ DÀY'.")
+                row_errors.append(f"Dòng Excel {r + 1} [{part_no}] - Cột {excel_col_name(cols['thickness'])}: Là Thép tấm nhưng thiếu 'ĐỘ DÀY (mm)'.")
+            if L is None or W is None:
+                row_errors.append(f"Dòng Excel {r + 1} [{part_no}]: Là Thép tấm nhưng thiếu 'CHIỀU DÀI' hoặc 'CHIỀU RỘNG'.")
             if tot_raw_wt is None:
-                row_errors.append(f"Dòng Excel {r + 1} [{part_no}]: Thiếu 'TỔNG KL NGUYÊN LIỆU (kg)'.")
+                row_errors.append(f"Dòng Excel {r + 1} [{part_no}] - Cột {excel_col_name(cols['tot_raw_wt'])}: Thiếu 'TỔNG KL NGUYÊN LIỆU (kg)'.")
 
         # Lấy các công đoạn và thứ tự thực hiện (1, 2, 3...)
         active_ops = []
@@ -255,7 +369,6 @@ def parse_and_validate_bom(df_raw, cfg, customer_code="STV", mat_spec_code="S01"
                         'outside': r_info['outside'],
                         'order': order
                     })
-        # Sắp xếp theo thứ tự công đoạn 1, 2, 3...
         active_ops.sort(key=lambda x: x['order'])
 
         items.append({
@@ -279,12 +392,8 @@ def build_erp_mbom_multi_level(items, customer_code="STV", mat_spec_code="S01", 
         return pd.DataFrame()
 
     rows = []
-    
-    # 1. Tìm các cụm cha cấp cao nhất (Level nhỏ nhất trong danh sách, thường là 0)
     min_level = min(it['level'] for it in items)
     
-    # Phân nhóm cây Cha - Con
-    # Một Cụm Cha bao gồm chính nó và tất cả các chi tiết con liền kề có Level > min_level
     parents = []
     curr_parent = None
     for it in items:
@@ -316,7 +425,6 @@ def build_erp_mbom_multi_level(items, customer_code="STV", mat_spec_code="S01", 
             '% Hao hụt': None, 'Công đoạn': None, 'Gia công ngoài': None, 'BTP': None, 'TP': 'x', 'Số Kg/NVL': None
         })
         
-        # Tách các công đoạn của Cụm Cha (Hàn WD, Xi mạ PL, Sơn PNT, Đóng gói PK)
         p_ops = p_item['ops']
         has_weld = any(o['code'] == 'WD' for o in p_ops)
         has_pl   = any(o['code'] == 'PL' for o in p_ops)
@@ -326,7 +434,6 @@ def build_erp_mbom_multi_level(items, customer_code="STV", mat_spec_code="S01", 
         welded_part_code = f"SG - {customer_code} - {p_code}.01"
         welded_part_name = f"{p_desc}_WELDED"
         
-        # Dòng BTP Cụm hàn đầu tiên nếu có hàn
         if has_weld:
             rows.append({
                 'STT': f"{p_idx}.1",
@@ -340,20 +447,17 @@ def build_erp_mbom_multi_level(items, customer_code="STV", mat_spec_code="S01", 
                 '% Hao hụt': None, 'Công đoạn': None, 'Gia công ngoài': None, 'BTP': 'x', 'TP': None, 'Số Kg/NVL': None
             })
             
-        # Liệt kê các chi tiết con cấu thành
         for child in children:
             c_code = child['part_no']
             c_desc = child['desc']
             c_wt   = child['tot_raw_wt']
             
-            # Phân định rõ ràng: Vật tư phụ (PEM, Pin, Bulong) vs Vật tư chính gia công cơ khí (Thép tấm, Thép hộp, Thép tròn)
             mat_type_lower = child.get('mat_type', '').lower()
             is_fastener = ("phụ" in mat_type_lower) or any(c_code.upper().startswith(pfx) for pfx in ['FA', 'D2150', 'M0', 'PIN']) or (child['tot_raw_wt'] is None and not any(k in c_desc.lower() for k in ['thép tấm', 'thép hộp', 'thép tròn', 'thép ống']))
             
             if not is_fastener:
                 mat_name, phoi, mat_code = get_raw_mat_info(child, mat_spec_code)
                 
-                # Routing công đoạn của chi tiết con
                 c_ops = [o['code'] for o in child['ops']]
                 if 'CUT' in c_ops and 'BD' in c_ops:
                     qtsx = "QTSX_01"
@@ -386,7 +490,6 @@ def build_erp_mbom_multi_level(items, customer_code="STV", mat_spec_code="S01", 
                     'Số Kg/NVL': None
                 })
             else:
-                # Phụ kiện (PEM, Pin, Bulong)
                 rows.append({
                     'STT': None,
                     'QTSX': None,
@@ -408,7 +511,6 @@ def build_erp_mbom_multi_level(items, customer_code="STV", mat_spec_code="S01", 
                     'Số Kg/NVL': None
                 })
 
-        # Định mức gá tổ hợp hàn (WD) nếu có
         if has_weld and children:
             first_c = children[0]
             rows.append({
@@ -439,7 +541,6 @@ def build_erp_mbom_multi_level(items, customer_code="STV", mat_spec_code="S01", 
                     '% Hao hụt': None, 'Công đoạn': None, 'Gia công ngoài': None, 'BTP': None, 'TP': None, 'Số Kg/NVL': None
                 })
 
-        # Công đoạn Xi mạ (QTSX_10 / PL)
         plated_part_code = f"SG - {customer_code} - {p_code}.01.01"
         plated_part_name = f"{p_desc}_PLATED"
         if has_pl:
@@ -464,7 +565,6 @@ def build_erp_mbom_multi_level(items, customer_code="STV", mat_spec_code="S01", 
                 'Số Kg/NVL': None
             })
 
-        # Công đoạn Sơn (QTSX_03 / PNT)
         if has_pnt:
             pnt_code = f"SG - {customer_code} - {p_code}.01.02" if has_pl else f"SG - {customer_code} - {p_code}.01.01"
             pnt_name = f"{p_desc}_PAINTED"
@@ -491,7 +591,6 @@ def build_erp_mbom_multi_level(items, customer_code="STV", mat_spec_code="S01", 
                 'Số Kg/NVL': None
             })
 
-        # Hoàn thiện Đóng gói Thành phẩm (QTSX_04 / PK)
         if has_pk:
             last_code = plated_part_code if has_pl else welded_part_code
             last_name = plated_part_name if has_pl else welded_part_name
@@ -518,18 +617,18 @@ def build_erp_mbom_multi_level(items, customer_code="STV", mat_spec_code="S01", 
 
     return pd.DataFrame(rows)
 
-# Giao diện người dùng
+# Giao diện chính
 uploaded_file = st.file_uploader("Tải lên file BOM Kỹ thuật (.xlsx)", type=["xlsx"])
 
 if uploaded_file is not None:
     try:
         df_raw = pd.read_excel(uploaded_file, sheet_name='Form', header=None)
         
-        # 1. Kiểm tra cấu trúc cột Template
+        # 1. Kiểm tra chặt chẽ cấu trúc 35 cột cố định của Template
         cfg, tpl_errors = validate_and_find_columns(df_raw)
         
         if tpl_errors:
-            st.error("🚨 PHÁT HIỆN LỖI CẤU TRÚC TEMPLATE:")
+            st.error(f"🚨 PHÁT HIỆN {len(tpl_errors)} LỖI CẤU TRÚC TEMPLATE (ĐÃ CHẶN CHUYỂN ĐỔI):")
             for err in tpl_errors:
                 st.markdown(f"- ❌ {err}")
         else:
@@ -537,18 +636,16 @@ if uploaded_file is not None:
             items, data_errors = parse_and_validate_bom(df_raw, cfg, cust_code, mat_spec_default, default_uom_fg)
             
             if data_errors:
-                st.warning(f"⚠️ Phát hiện {len(data_errors)} cảnh báo dữ liệu cần lưu ý:")
+                st.warning(f"⚠️ Phát hiện {len(data_errors)} lỗi/cảnh báo dữ liệu trên dòng:")
                 with st.expander("Bấm để xem danh sách lỗi chi tiết từng dòng", expanded=True):
-                    for derr in data_errors[:20]:
+                    for derr in data_errors:
                         st.markdown(f"- {derr}")
-                    if len(data_errors) > 20:
-                        st.markdown(f"*... và còn {len(data_errors) - 20} cảnh báo khác.*")
                         
             # 3. Tạo dữ liệu BOM ERP
             df_result = build_erp_mbom_multi_level(items, cust_code, mat_spec_default, default_uom_fg)
             
             if len(df_result) > 0:
-                st.success(f"✅ Đã phân tích và chuyển đổi thành công {len(df_result)} dòng BOM ERP!")
+                st.success(f"✅ Template chuẩn 100%! Đã chuyển đổi thành công {len(df_result)} dòng BOM ERP.")
                 st.dataframe(df_result, use_container_width=True)
                 
                 output = io.BytesIO()
