@@ -21,10 +21,16 @@ with st.sidebar:
     st.markdown("---")
     st.markdown("""
     **Cơ chế kiểm soát dữ liệu:**
-    - Tự động nhận diện số cấp của cột `MỤC` (từ cột 0 đến trước `MÃ SỐ CHI TIẾT`).
-    - Bắt buộc kiểm tra đúng tên và thứ tự các cột cố định.
+    - Tự động nhận diện số cấp của vùng cột `MỤC` (từ cột 0 đến trước `MÃ SỐ CHI TIẾT`).
+    - Chuẩn hóa khoảng trắng và ký tự xuống dòng (`\n`) để nhận diện chính xác 100% tiêu đề các cột cố định.
     - Cảnh báo chi tiết từng dòng nếu thiếu dữ liệu, sai số lượng hoặc thiếu kích thước phôi.
     """)
+
+def clean_header_str(val):
+    """Chuẩn hóa chuỗi tiêu đề, loại bỏ ký tự ngắt dòng \n, \r và khoảng trắng thừa"""
+    if pd.isna(val):
+        return ""
+    return re.sub(r'[\r\n\s]+', ' ', str(val)).strip().upper()
 
 def validate_and_find_columns(df_raw):
     """
@@ -35,16 +41,16 @@ def validate_and_find_columns(df_raw):
     """
     errors = []
     
-    # 1. Tìm hàng tiêu đề (thông thường là hàng 4, tức dòng thứ 5 trong Excel)
+    # 1. Tìm hàng tiêu đề (thông thường là hàng index 4)
     header_row_idx = None
-    for r in range(min(10, len(df_raw))):
-        row_str = [str(x).strip().upper() for x in df_raw.iloc[r] if pd.notna(x)]
+    for r in range(min(15, len(df_raw))):
+        row_str = [clean_header_str(x) for x in df_raw.iloc[r] if pd.notna(x)]
         if any("MÃ SỐ CHI TIẾT" in x or "MÃ CHI TIẾT" in x for x in row_str):
             header_row_idx = r
             break
             
     if header_row_idx is None:
-        errors.append("Không tìm thấy hàng tiêu đề chứa cột 'MÃ SỐ CHI TIẾT' trong 10 dòng đầu tiên.")
+        errors.append("Không tìm thấy hàng tiêu đề chứa cột 'MÃ SỐ CHI TIẾT' trong 15 dòng đầu tiên.")
         return None, errors
 
     header_row = df_raw.iloc[header_row_idx]
@@ -52,7 +58,7 @@ def validate_and_find_columns(df_raw):
     # 2. Định vị cột MÃ SỐ CHI TIẾT
     idx_part_no = None
     for c in range(len(header_row)):
-        val = str(header_row[c]).strip().upper() if pd.notna(header_row[c]) else ""
+        val = clean_header_str(header_row[c])
         if "MÃ SỐ CHI TIẾT" in val or "MÃ CHI TIẾT" in val:
             idx_part_no = c
             break
@@ -83,7 +89,7 @@ def validate_and_find_columns(df_raw):
     for key, kw_list, label in required_keywords:
         found_c = None
         for c in range(idx_part_no + 1, len(header_row)):
-            val = str(header_row[c]).strip().upper() if pd.notna(header_row[c]) else ""
+            val = clean_header_str(header_row[c])
             if any(kw in val for kw in kw_list):
                 found_c = c
                 break
@@ -92,12 +98,13 @@ def validate_and_find_columns(df_raw):
         else:
             errors.append(f"Thiếu cột bắt buộc: '{label}' phía sau cột MÃ SỐ CHI TIẾT.")
 
-    # Cột chiều rộng phụ (W_B) cho thép hộp (nếu có)
+    # Cột chiều rộng phụ (W_B) cho thép hộp (nếu có ở hàng sub-header)
     for c in range(idx_part_no + 1, len(header_row)):
-        v5 = str(df_raw.iloc[header_row_idx + 1, c]).strip().lower() if len(df_raw) > header_row_idx + 1 and pd.notna(df_raw.iloc[header_row_idx + 1, c]) else ""
-        if "mm(b)" in v5:
-            col_mapping['width_b'] = c
-            break
+        if len(df_raw) > header_row_idx + 1:
+            v5 = clean_header_str(df_raw.iloc[header_row_idx + 1, c]).lower()
+            if "mm(b)" in v5:
+                col_mapping['width_b'] = c
+                break
 
     # 4. Định vị các cột Quy trình sản xuất (Routing)
     routing_keys = [
@@ -115,7 +122,7 @@ def validate_and_find_columns(df_raw):
     col_mapping['routings'] = []
     for code, kws, qtsx, is_outside in routing_keys:
         for c in range(idx_part_no + 1, len(header_row)):
-            val = str(header_row[c]).strip().upper() if pd.notna(header_row[c]) else ""
+            val = clean_header_str(header_row[c])
             if any(kw in val for kw in kws):
                 col_mapping['routings'].append({
                     'col': c, 'code': code, 'qtsx': qtsx, 'outside': is_outside, 'name': val
@@ -167,7 +174,7 @@ def parse_and_validate_bom(df_raw, cfg, customer_code="STV", mat_spec_code="S01"
     cols = cfg['cols']
     num_level_cols = cols['level_zone_end']
     
-    start_row = header_idx + 2  # Dòng bắt đầu dữ liệu sau hàng sub-header đơn vị mm/inch
+    start_row = header_idx + 2  # Dòng bắt đầu dữ liệu sau hàng sub-header mm/inch
     
     for r in range(start_row, len(df_raw)):
         row = df_raw.iloc[r]
@@ -339,8 +346,11 @@ def build_erp_mbom_multi_level(items, customer_code="STV", mat_spec_code="S01", 
             c_desc = child['desc']
             c_wt   = child['tot_raw_wt']
             
-            # Nếu là chi tiết con cấp dưới cùng dùng phôi NVL
-            if child['tot_raw_wt'] is not None or "thép" in c_desc.lower():
+            # Phân định rõ ràng: Vật tư phụ (PEM, Pin, Bulong) vs Vật tư chính gia công cơ khí (Thép tấm, Thép hộp, Thép tròn)
+            mat_type_lower = child.get('mat_type', '').lower()
+            is_fastener = ("phụ" in mat_type_lower) or any(c_code.upper().startswith(pfx) for pfx in ['FA', 'D2150', 'M0', 'PIN']) or (child['tot_raw_wt'] is None and not any(k in c_desc.lower() for k in ['thép tấm', 'thép hộp', 'thép tròn', 'thép ống']))
+            
+            if not is_fastener:
                 mat_name, phoi, mat_code = get_raw_mat_info(child, mat_spec_code)
                 
                 # Routing công đoạn của chi tiết con
