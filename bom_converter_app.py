@@ -23,7 +23,9 @@ with st.sidebar:
     **Logic nghiệp vụ tích hợp:**
     - **Vùng cột `MỤC`**: Nhận diện động mọi cấp độ thụt lề Cha - Con (từ cột A đến trước `MÃ SỐ CHI TIẾT`).
     - **Khóa cứng 35 cột cố định**: Đối soát tuần tự 1-1 từ `MÃ SỐ CHI TIẾT` đến `Đóng gói (PK)`.
-    - **Đệ quy đa tầng**: Trình bày các BTP con trước, sau đó định mức vào công đoạn của mã cha theo đúng số thứ tự công đoạn (`1, 2, 3...`).
+    - **Tách dòng BTP đa công đoạn**: Chi tiết có từ 2 công đoạn trở lên được tách dòng tiêu đề BTP riêng phía trên các dòng định mức công đoạn.
+    - **Đánh số STT đồng cấp**: Tự động đánh số STT cho toàn bộ BTP đồng cấp, ngoại trừ các BTP ở cấp thấp nhất trên toàn bộ file BOM.
+    - **Chuẩn hóa Tên NVL cho BTP**: Khi NVL đầu vào là BTP, cột `Tên NVL` lấy đúng giá trị tại cột `Mã sản phẩm` của BTP đó.
     """)
 
 # Danh mục chuẩn 35 cột cố định tính từ MÃ SỐ CHI TIẾT (Offset +0 đến +34)
@@ -66,13 +68,11 @@ EXPECTED_FIXED_COLS = [
 ]
 
 def clean_header_str(val):
-    """Chuẩn hóa chuỗi tiêu đề, loại bỏ ký tự xuống dòng \n, \r và khoảng trắng thừa"""
     if pd.isna(val):
         return ""
     return re.sub(r'[\r\n\s]+', ' ', str(val)).strip()
 
 def excel_col_name(n):
-    """Đổi chỉ số cột (0-indexed) sang ký hiệu cột Excel (A, B, ..., Z, AA, AB...)"""
     name = ""
     while n >= 0:
         name = chr(n % 26 + 65) + name
@@ -80,7 +80,6 @@ def excel_col_name(n):
     return name
 
 def match_col_spec(h_main, h_sub, spec):
-    """Kiểm tra tiêu đề chính và tiêu đề phụ (đơn vị mm/inch) có khớp với đặc tả cột thứ offset hay không"""
     offset, label, req_sub, kw_list = spec
     h_main_up = h_main.upper()
     h_sub_up = h_sub.upper()
@@ -111,12 +110,7 @@ def match_col_spec(h_main, h_sub, spec):
         return any(k in h_main_up for k in kw_list)
 
 def validate_and_find_columns(df_raw):
-    """
-    Thuật toán LCS (Longest Common Subsequence) đối soát chặt chẽ toàn bộ 35 cột cố định:
-    - Tự động phát hiện chính xác bất kỳ cột nào bị xóa, bị đổi tên, đảo vị trí hoặc chèn thêm.
-    """
     errors = []
-    
     header_idx = None
     for r in range(min(20, len(df_raw))):
         row_vals = [clean_header_str(x).upper() for x in df_raw.iloc[r] if pd.notna(x)]
@@ -212,61 +206,58 @@ def validate_and_find_columns(df_raw):
         'mat_type': idx_part + 24,
         'mat_spec': idx_part + 25,
         'routings': [
-            {'col': idx_part + 26, 'code': 'CUT', 'qtsx': 'QTSX_05', 'outside': False, 'name': 'Cắt (CUT)'},
-            {'col': idx_part + 27, 'code': 'BD',  'qtsx': 'QTSX_01', 'outside': False, 'name': 'Chấn/uốn (BD)'},
-            {'col': idx_part + 28, 'code': 'WD',  'qtsx': 'QTSX_06', 'outside': False, 'name': 'Hàn (WD)'},
-            {'col': idx_part + 29, 'code': 'MC',  'qtsx': 'QTSX_07', 'outside': False, 'name': 'Phay tiện (MC)'},
-            {'col': idx_part + 30, 'code': 'FM',  'qtsx': 'QTSX_08', 'outside': False, 'name': 'Dập tạo hình (FM)'},
-            {'col': idx_part + 31, 'code': 'PNT', 'qtsx': 'QTSX_03', 'outside': True,  'name': 'Sơn (PNT)'},
-            {'col': idx_part + 32, 'code': 'PL',  'qtsx': 'QTSX_10', 'outside': True,  'name': 'Xi mạ (PL)'},
-            {'col': idx_part + 33, 'code': 'AS',  'qtsx': 'QTSX_09', 'outside': False, 'name': 'Lắp ráp (AS)'},
-            {'col': idx_part + 34, 'code': 'PK',  'qtsx': 'QTSX_04', 'outside': False, 'name': 'Đóng gói (PK)'}
+            {'col': idx_part + 26, 'code': 'CUT', 'qtsx': 'QTSX_05', 'name': 'Cắt (CUT)'},
+            {'col': idx_part + 27, 'code': 'BD',  'qtsx': 'QTSX_01', 'name': 'Chấn/uốn (BD)'},
+            {'col': idx_part + 28, 'code': 'WD',  'qtsx': 'QTSX_06', 'name': 'Hàn (WD)'},
+            {'col': idx_part + 29, 'code': 'MC',  'qtsx': 'QTSX_07', 'name': 'Phay tiện (MC)'},
+            {'col': idx_part + 30, 'code': 'FM',  'qtsx': 'QTSX_08', 'name': 'Dập tạo hình (FM)'},
+            {'col': idx_part + 31, 'code': 'PNT', 'qtsx': 'QTSX_03', 'name': 'Sơn (PNT)'},
+            {'col': idx_part + 32, 'code': 'PL',  'qtsx': 'QTSX_10', 'name': 'Xi mạ (PL)'},
+            {'col': idx_part + 33, 'code': 'AS',  'qtsx': 'QTSX_09', 'name': 'Lắp ráp (AS)'},
+            {'col': idx_part + 34, 'code': 'PK',  'qtsx': 'QTSX_04', 'name': 'Đóng gói (PK)'}
         ]
     }
     return {'header_row': header_idx, 'cols': col_mapping}, []
 
 def get_raw_mat_info(item, mat_spec_code="S01"):
-    """
-    Tạo Tên NVL, Quy cách Phôi và Mã Master Data NVL theo đúng 4 quy tắc vật liệu:
-    - Thép tấm: Mô tả + Độ dày
-    - Thép tròn đặc: Thép tròn đặc + phi + Chiều rộng
-    - Thép hộp: Chiều rộng A x Chiều rộng B x Độ dày (Phôi: Rộng A x Rộng B x Dài)
-    - Thép ống: phi (Chiều rộng) x Độ dày (Phôi: phi x Chiều dài)
-    """
-    desc = item['desc'].lower() if item['desc'] else ""
+    desc = item['desc'].strip() if item['desc'] else ""
+    desc_low = desc.lower()
     T = item['T']
     W = item['W']
     W_B = item.get('W_B')
     L = item['L']
     
-    if "hộp" in desc:
-        t_int = int(round(float(T))) if (T is not None and str(T).strip() != '') else 3
+    if "thép hộp" in desc_low or ("hộp" in desc_low and T is not None):
+        t_int = int(round(float(T))) if (T is not None and str(T).strip() != '') else 0
         wb_val = W_B if W_B is not None else W
-        mat_name = f"Thép hộp {W:.0f}x{wb_val:.0f}x{T:.0f}mm" if (W is not None and T is not None) else f"Thép hộp {T}mm"
-        phoi = f"{W:.0f} x {wb_val:.0f} x {L:.0f}" if (W is not None and L is not None) else f"{L}"
+        mat_name = f"{desc} {W:.0f}x{wb_val:.0f}x{T:.0f}mm" if (W is not None and T is not None) else desc
+        phoi = f"{W:.0f} x {wb_val:.0f} x {L:.0f}" if (W is not None and L is not None) else (f"{L}" if L is not None else None)
         mat_code = f"R-H-{mat_spec_code}-{t_int:02d}-00-000"
-    elif "tròn đặc" in desc:
-        w_int = int(round(float(W))) if (W is not None and str(W).strip() != '') else 32
-        mat_name = f"Thép tròn đặc phi {W:.0f}mm" if W is not None else "Thép tròn đặc"
-        phoi = f"dài {L:.0f}" if L is not None else ""
+    elif "tròn đặc" in desc_low:
+        w_int = int(round(float(W))) if (W is not None and str(W).strip() != '') else 0
+        mat_name = f"{desc} phi {W:.0f}mm" if W is not None else desc
+        phoi = f"dài {L:.0f}" if L is not None else None
         mat_code = f"R-B-{mat_spec_code}-{w_int:02d}-00-000"
-    elif "ống" in desc:
-        t_int = int(round(float(T))) if (T is not None and str(T).strip() != '') else 3
-        mat_name = f"Thép ống phi {W:.0f}x{L:.0f}mm" if (W is not None and L is not None) else "Thép ống"
-        phoi = f"phi {W:.0f} x {L:.0f}" if (W is not None and L is not None) else ""
+    elif "thép ống" in desc_low or ("ống" in desc_low and "khói" not in desc_low and W is not None):
+        t_int = int(round(float(T))) if (T is not None and str(T).strip() != '') else 0
+        mat_name = f"{desc} phi {W:.0f}x{L:.0f}mm" if (W is not None and L is not None) else desc
+        phoi = f"phi {W:.0f} x {L:.0f}" if (W is not None and L is not None) else None
         mat_code = f"R-T-{mat_spec_code}-{t_int:02d}-00-000"
-    else:  # Thép tấm
-        t_val = float(T) if (T is not None and str(T).strip() != '') else 4.0
+    elif T is not None and str(T).strip() != '':
+        t_val = float(T)
         t_str = f"{t_val:.0f}" if t_val.is_integer() else f"{t_val}"
         t_int = int(round(t_val))
-        mat_name = f"{item['desc']} {t_str}mm" if item['desc'] else f"Thép tấm {t_str}mm"
-        phoi = f"{L} x {W}" if (L is not None and W is not None) else ""
+        mat_name = f"{desc} {t_str}mm" if desc else f"Thép tấm {t_str}mm"
+        phoi = f"{L} x {W}" if (L is not None and W is not None) else None
         mat_code = f"R-P-{mat_spec_code}-{t_int:02d}-00-000"
+    else:
+        mat_name = desc
+        phoi = f"{L} x {W}" if (L is not None and W is not None) else None
+        mat_code = item['part_no'] if item['part_no'] else None
         
     return mat_name, phoi, mat_code
 
 def parse_and_validate_bom(df_raw, cfg, customer_code="STV", mat_spec_code="S01", default_uom="Cái"):
-    """Duyệt từng dòng dữ liệu và kiểm tra chặt chẽ các lỗi logic dữ liệu"""
     row_errors = []
     items = []
     
@@ -340,7 +331,7 @@ def parse_and_validate_bom(df_raw, cfg, customer_code="STV", mat_spec_code="S01"
             if T is None:
                 row_errors.append(f"Dòng Excel {r + 1} [{part_no}] - Cột {excel_col_name(cols['thickness'])}: Là Thép tấm nhưng thiếu 'ĐỘ DÀY (mm)'.")
             if L is None or W is None:
-                row_errors.append(f"Dòng Excel {r + 1} [{part_no}]: Là Thép tấm nhưng thiếu 'CHIỀU DÀI' hoặc 'CHIỀU RỘNG'.")
+                row_errors.append(f"Dòng Excel {r + 1} [{part_no}] - Cột {excel_col_name(cols['length'])} / {excel_col_name(cols['width'])}: Là Thép tấm nhưng thiếu 'CHIỀU DÀI' hoặc 'CHIỀU RỘNG'.")
             if tot_raw_wt is None:
                 row_errors.append(f"Dòng Excel {r + 1} [{part_no}] - Cột {excel_col_name(cols['tot_raw_wt'])}: Thiếu 'TỔNG KL NGUYÊN LIỆU (kg)'.")
 
@@ -358,7 +349,6 @@ def parse_and_validate_bom(df_raw, cfg, customer_code="STV", mat_spec_code="S01"
                     active_ops.append({
                         'code': r_info['code'],
                         'qtsx': r_info['qtsx'],
-                        'outside': r_info['outside'],
                         'order': order
                     })
         active_ops.sort(key=lambda x: x['order'])
@@ -379,12 +369,6 @@ def parse_and_validate_bom(df_raw, cfg, customer_code="STV", mat_spec_code="S01"
     return items, row_errors
 
 def group_operations(ops):
-    """
-    Gom nhóm các công đoạn theo quy trình chuẩn và thứ tự được đánh số (1, 2, 3...):
-    - Cắt (CUT) và Chấn/uốn (BD) liền kề tạo thành 1 quy trình QTSX_01 ('CUT, BD')
-    - Hàn (WD) và Phay tiện (MC) liền kề tạo thành 1 quy trình QTSX_02 ('WD, MC')
-    - Các công đoạn đơn lẻ ánh xạ đúng mã QTSX_03 -> QTSX_10
-    """
     if not ops:
         return []
         
@@ -394,10 +378,10 @@ def group_operations(ops):
         curr = ops[i]
         code = curr['code']
         if i + 1 < len(ops) and {code, ops[i + 1]['code']} == {'CUT', 'BD'}:
-            stages.append({'qtsx': 'QTSX_01', 'stage': 'CUT, BD', 'outside': False, 'suffix': '_CUT_BD'})
+            stages.append({'qtsx': 'QTSX_01', 'stage': 'CUT, BD', 'suffix': '_CUT_BD'})
             i += 2
         elif i + 1 < len(ops) and {code, ops[i + 1]['code']} == {'WD', 'MC'}:
-            stages.append({'qtsx': 'QTSX_02', 'stage': 'WD, MC', 'outside': False, 'suffix': '_WELDED'})
+            stages.append({'qtsx': 'QTSX_02', 'stage': 'WD, MC', 'suffix': '_WELDED'})
             i += 2
         else:
             suffix_map = {
@@ -411,14 +395,12 @@ def group_operations(ops):
             stages.append({
                 'qtsx': qtsx_map.get(code, curr['qtsx']),
                 'stage': code,
-                'outside': curr['outside'],
                 'suffix': suffix_map.get(code, f"_{code}")
             })
             i += 1
     return stages
 
 def build_tree_from_flat_items(items):
-    """Xây dựng cây phân cấp Cha - Con tự động dựa trên cột MỤC (Level)"""
     roots = []
     stack = []
     for it in items:
@@ -434,21 +416,33 @@ def build_tree_from_flat_items(items):
     return roots
 
 def build_erp_mbom_multi_level(items, customer_code="STV", mat_spec_code="S01", default_uom="Cái"):
-    """
-    Chuyển đổi đệ quy cây BOM đa tầng sang MBOM ERP chuẩn:
-    - Trình bày các BTP con và quy trình tạo ra chi tiết con trước.
-    - Kết thúc phần định mức cho mã cha sẽ trình bày các mã con trải qua công đoạn được tích ở mã cha.
-    - Nếu mã cha có nhiều công đoạn (1, 2, 3...) thì mỗi công đoạn sinh ra một mã BTP mới nối tiếp nhau.
-    """
     if not items:
         return pd.DataFrame()
         
     roots = build_tree_from_flat_items(items)
+    
+    def is_btp_node(node):
+        return bool(node['children']) or bool(group_operations(node['item']['ops']))
+        
+    btp_levels = []
+    def collect_btp_levels(node):
+        if is_btp_node(node):
+            btp_levels.append(node['item']['level'])
+        for ch in node['children']:
+            collect_btp_levels(ch)
+            
+    for r_node in roots:
+        collect_btp_levels(r_node)
+        
+    max_btp_level = max(btp_levels) if btp_levels else 0
     rows = []
     
     def process_node(node, stt_prefix, parent_code="", child_seq=1, is_root=False):
         it = node['item']
         children = node['children']
+        lvl = it['level']
+        
+        node_stt = None if (lvl == max_btp_level and not is_root) else stt_prefix
         
         raw_part = it['part_no']
         if is_root and " _ " in raw_part:
@@ -464,20 +458,39 @@ def build_erp_mbom_multi_level(items, customer_code="STV", mat_spec_code="S01", 
         raw_desc = it['desc'] if it['desc'] else raw_code
         stages = group_operations(it['ops'])
         
-        # 1. CHI TIẾT CON CẤP THẤP NHẤT (LEAF NODE)
+        # 1. TRƯỜNG HỢP NODE LÁ
         if not children:
-            has_raw_steel = (it['tot_raw_wt'] is not None) or any(k in raw_desc.lower() for k in ['thép tấm', 'thép hộp', 'thép tròn', 'thép ống'])
-            if has_raw_steel and stages:
+            has_raw_mat = (it['tot_raw_wt'] is not None) or any(k in raw_desc.lower() for k in ['thép tấm', 'thép hộp', 'thép tròn', 'thép ống', 'inox']) or bool(stages)
+            if has_raw_mat and stages:
                 mat_name, phoi, mat_code = get_raw_mat_info(it, mat_spec_code)
-                c_wt = round(float(it['tot_raw_wt']), 2) if (it['tot_raw_wt'] is not None and str(it['tot_raw_wt']).strip() != '') else None
+                c_wt = round(float(it['tot_raw_wt']), 2) if (it['tot_raw_wt'] is not None and str(it['tot_raw_wt']).strip() != '') else it['qty']
+                raw_uom = 'Kg' if (it['tot_raw_wt'] is not None and str(it['tot_raw_wt']).strip() != '') else (it['uom'] if it['uom'] else default_uom)
                 
+                final_btp_full = f"SG - {customer_code} - {raw_code}"
+                
+                if len(stages) >= 2:
+                    rows.append({
+                        'STT': node_stt,
+                        'QTSX': None,
+                        'Mã sản phẩm': final_btp_full,
+                        'Loại': 'BTP',
+                        'Tên sản phẩm': raw_code,
+                        'SL SP': 1,
+                        'ĐVT sp': default_uom,
+                        'Mã NVL': None, 'Phôi (mm)': None, 'Tên NVL': None, 'ĐVT (NVL)': None, 'Số lượng': None,
+                        '% Hao hụt': None, 'Công đoạn': None, 'BTP': 'x', 'TP': None, 'Số Kg/NVL': None
+                    })
+                    first_row_stt = None
+                else:
+                    first_row_stt = node_stt
+                    
                 st0 = stages[0]
                 curr_btp_short = f"{raw_code}.01" if len(stages) > 1 else raw_code
                 curr_btp_full = f"SG - {customer_code} - {curr_btp_short}"
                 curr_btp_name = f"{raw_code}{st0['suffix']}" if len(stages) > 1 else raw_code
                 
                 rows.append({
-                    'STT': None,
+                    'STT': first_row_stt,
                     'QTSX': st0['qtsx'],
                     'Mã sản phẩm': curr_btp_full,
                     'Loại': 'BTP',
@@ -487,11 +500,10 @@ def build_erp_mbom_multi_level(items, customer_code="STV", mat_spec_code="S01", 
                     'Mã NVL': mat_code,
                     'Phôi (mm)': phoi,
                     'Tên NVL': mat_name,
-                    'ĐVT (NVL)': 'Kg',
+                    'ĐVT (NVL)': raw_uom,
                     'Số lượng': c_wt,
                     '% Hao hụt': None,
-                    'Công đoạn': None if st0['outside'] else st0['stage'],
-                    'Gia công ngoài': st0['stage'] if st0['outside'] else None,
+                    'Công đoạn': st0['stage'],
                     'BTP': 'x',
                     'TP': None,
                     'Số Kg/NVL': None
@@ -513,30 +525,30 @@ def build_erp_mbom_multi_level(items, customer_code="STV", mat_spec_code="S01", 
                         'ĐVT sp': default_uom,
                         'Mã NVL': curr_btp_short,
                         'Phôi (mm)': None,
-                        'Tên NVL': curr_btp_name,
+                        'Tên NVL': curr_btp_full,
                         'ĐVT (NVL)': default_uom,
                         'Số lượng': 1,
                         '% Hao hụt': None,
-                        'Công đoạn': None if st_next['outside'] else st_next['stage'],
-                        'Gia công ngoài': st_next['stage'] if st_next['outside'] else None,
+                        'Công đoạn': st_next['stage'],
                         'BTP': 'x',
                         'TP': None,
                         'Số Kg/NVL': None
                     })
                     curr_btp_short = next_btp_short
+                    curr_btp_full = next_btp_full
                     curr_btp_name = next_btp_name
                     
-                return {'code': curr_btp_short, 'name': curr_btp_name, 'qty': it['qty'], 'uom': default_uom}
+                return {'code': curr_btp_short, 'name': curr_btp_full, 'qty': it['qty'], 'uom': default_uom}
             else:
                 return {'code': raw_code, 'name': raw_desc, 'qty': it['qty'], 'uom': it['uom'] if it['uom'] else default_uom}
 
-        # 2. MÃ CHA (PARENT NODE CÓ CHI TIẾT CON LIỀN KỀ)
+        # 2. TRƯỜNG HỢP MÃ CHA
         item_type = 'THÀNH PHẨM' if is_root else 'BTP'
         prefix_type = 'FG' if is_root else 'SG'
         main_full_code = f"{prefix_type} - {customer_code} - {raw_code}"
         
         rows.append({
-            'STT': stt_prefix,
+            'STT': node_stt,
             'QTSX': None,
             'Mã sản phẩm': main_full_code,
             'Loại': item_type,
@@ -544,7 +556,7 @@ def build_erp_mbom_multi_level(items, customer_code="STV", mat_spec_code="S01", 
             'SL SP': 1,
             'ĐVT sp': default_uom,
             'Mã NVL': None, 'Phôi (mm)': None, 'Tên NVL': None, 'ĐVT (NVL)': None, 'Số lượng': None,
-            '% Hao hụt': None, 'Công đoạn': None, 'Gia công ngoài': None,
+            '% Hao hụt': None, 'Công đoạn': None,
             'BTP': 'x' if not is_root else None,
             'TP': 'x' if is_root else None,
             'Số Kg/NVL': None
@@ -556,7 +568,7 @@ def build_erp_mbom_multi_level(items, customer_code="STV", mat_spec_code="S01", 
             first_btp_full = f"SG - {customer_code} - {first_btp_short}"
             first_btp_name = f"{raw_desc}{st0['suffix']}"
             rows.append({
-                'STT': f"{stt_prefix}.1",
+                'STT': f"{stt_prefix}.1" if node_stt is not None else None,
                 'QTSX': None,
                 'Mã sản phẩm': first_btp_full,
                 'Loại': 'BTP',
@@ -564,7 +576,7 @@ def build_erp_mbom_multi_level(items, customer_code="STV", mat_spec_code="S01", 
                 'SL SP': 1,
                 'ĐVT sp': default_uom,
                 'Mã NVL': None, 'Phôi (mm)': None, 'Tên NVL': None, 'ĐVT (NVL)': None, 'Số lượng': None,
-                '% Hao hụt': None, 'Công đoạn': None, 'Gia công ngoài': None, 'BTP': 'x', 'TP': None, 'Số Kg/NVL': None
+                '% Hao hụt': None, 'Công đoạn': None, 'BTP': 'x', 'TP': None, 'Số Kg/NVL': None
             })
         else:
             first_btp_short = raw_code
@@ -572,11 +584,13 @@ def build_erp_mbom_multi_level(items, customer_code="STV", mat_spec_code="S01", 
             first_btp_name = raw_desc
 
         child_outputs = []
-        sub_counter = 1
+        btp_child_counter = 1
         for c_idx, ch in enumerate(children, 1):
-            ch_stt = f"{stt_prefix}.{sub_counter}"
-            if ch['children']:
-                sub_counter += 1
+            if is_btp_node(ch):
+                ch_stt = f"{stt_prefix}.{btp_child_counter}"
+                btp_child_counter += 1
+            else:
+                ch_stt = None
             ch_out = process_node(ch, ch_stt, parent_code=raw_code, child_seq=c_idx, is_root=False)
             if ch_out:
                 child_outputs.append(ch_out)
@@ -598,8 +612,7 @@ def build_erp_mbom_multi_level(items, customer_code="STV", mat_spec_code="S01", 
                 'ĐVT (NVL)': first_c['uom'],
                 'Số lượng': first_c['qty'],
                 '% Hao hụt': None,
-                'Công đoạn': None if st0['outside'] else st0['stage'],
-                'Gia công ngoài': st0['stage'] if st0['outside'] else None,
+                'Công đoạn': st0['stage'],
                 'BTP': None,
                 'TP': None,
                 'Số Kg/NVL': None
@@ -613,11 +626,11 @@ def build_erp_mbom_multi_level(items, customer_code="STV", mat_spec_code="S01", 
                     'Tên NVL': c_out['name'],
                     'ĐVT (NVL)': c_out['uom'],
                     'Số lượng': c_out['qty'],
-                    '% Hao hụt': None, 'Công đoạn': None, 'Gia công ngoài': None, 'BTP': None, 'TP': None, 'Số Kg/NVL': None
+                    '% Hao hụt': None, 'Công đoạn': None, 'BTP': None, 'TP': None, 'Số Kg/NVL': None
                 })
                 
             curr_short = first_btp_short
-            curr_name = first_btp_name
+            curr_full = first_btp_full
             for s_idx, st_next in enumerate(stages[1:], 2):
                 is_last = (s_idx == len(stages))
                 if is_last and is_root:
@@ -632,7 +645,7 @@ def build_erp_mbom_multi_level(items, customer_code="STV", mat_spec_code="S01", 
                     next_type = 'BTP'
                     
                 rows.append({
-                    'STT': f"{stt_prefix}.{s_idx}",
+                    'STT': f"{stt_prefix}.{s_idx}" if node_stt is not None else None,
                     'QTSX': st_next['qtsx'],
                     'Mã sản phẩm': next_full,
                     'Loại': next_type,
@@ -641,20 +654,19 @@ def build_erp_mbom_multi_level(items, customer_code="STV", mat_spec_code="S01", 
                     'ĐVT sp': default_uom,
                     'Mã NVL': curr_short,
                     'Phôi (mm)': None,
-                    'Tên NVL': curr_name,
+                    'Tên NVL': curr_full,
                     'ĐVT (NVL)': default_uom,
                     'Số lượng': 1,
                     '% Hao hụt': None,
-                    'Công đoạn': None if st_next['outside'] else st_next['stage'],
-                    'Gia công ngoài': st_next['stage'] if st_next['outside'] else None,
+                    'Công đoạn': st_next['stage'],
                     'BTP': 'x' if next_type == 'BTP' else None,
                     'TP': None,
                     'Số Kg/NVL': None
                 })
                 curr_short = next_short
-                curr_name = next_name
+                curr_full = next_full
                 
-        return {'code': raw_code, 'name': raw_desc, 'qty': it['qty'], 'uom': default_uom}
+        return {'code': raw_code, 'name': main_full_code, 'qty': it['qty'], 'uom': default_uom}
 
     for r_idx, root in enumerate(roots, 1):
         process_node(root, str(r_idx), parent_code="", child_seq=r_idx, is_root=True)
@@ -668,7 +680,6 @@ if uploaded_file is not None:
     try:
         df_raw = pd.read_excel(uploaded_file, sheet_name='Form', header=None)
         
-        # 1. Kiểm tra chặt chẽ cấu trúc 35 cột cố định của Template
         cfg, tpl_errors = validate_and_find_columns(df_raw)
         
         if tpl_errors:
@@ -676,7 +687,6 @@ if uploaded_file is not None:
             for err in tpl_errors:
                 st.markdown(f"- ❌ {err}")
         else:
-            # 2. Kiểm tra chi tiết dữ liệu từng dòng
             items, data_errors = parse_and_validate_bom(df_raw, cfg, cust_code, mat_spec_default, default_uom_fg)
             
             if data_errors:
@@ -685,7 +695,6 @@ if uploaded_file is not None:
                     for derr in data_errors:
                         st.markdown(f"- {derr}")
                         
-            # 3. Tạo dữ liệu BOM ERP theo đệ quy đa tầng
             df_result = build_erp_mbom_multi_level(items, cust_code, mat_spec_default, default_uom_fg)
             
             if len(df_result) > 0:
