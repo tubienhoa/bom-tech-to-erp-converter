@@ -486,9 +486,9 @@ def build_erp_mbom_multi_level(items, customer_code="STV", mat_spec_code="S01", 
                     first_row_stt = node_stt
                     
                 st0 = stages[0]
-                curr_btp_short = f"{raw_code}.01" if len(stages) >= 2 else raw_code
-                curr_btp_full = f"SG - {customer_code} - {curr_btp_short}" if len(stages) >= 2 else final_btp_full
-                curr_btp_name = f"{raw_code}{st0['suffix']}" if len(stages) >= 2 else raw_code
+                curr_btp_short = f"{raw_code}.01" if len(stages) == 2 else raw_code
+                curr_btp_full = f"SG - {customer_code} - {curr_btp_short}" if len(stages) == 2 else final_btp_full
+                curr_btp_name = f"{raw_code}{st0['suffix']}" if len(stages) == 2 else raw_code
                 
                 rows.append({
                     'STT': first_row_stt,
@@ -539,7 +539,7 @@ def build_erp_mbom_multi_level(items, customer_code="STV", mat_spec_code="S01", 
                     curr_btp_full = next_btp_full
                     curr_btp_name = next_btp_name
                     
-                return {'code': raw_code if len(stages) < 2 else curr_btp_short, 'name': final_btp_full, 'qty': it['qty'], 'uom': default_uom}
+                return {'code': raw_code if len(stages) != 2 else curr_btp_short, 'name': final_btp_full, 'qty': it['qty'], 'uom': default_uom}
             else:
                 return {'code': raw_code, 'name': raw_code, 'qty': it['qty'], 'uom': it['uom'] if it['uom'] else default_uom}
 
@@ -604,7 +604,7 @@ def build_erp_mbom_multi_level(items, customer_code="STV", mat_spec_code="S01", 
                 'STT': None,
                 'QTSX': st0['qtsx'],
                 'Mã sản phẩm': first_btp_full,
-                'Loại': 'BTP' if len(stages) >= 2 or not is_root else 'THÀNH PHẨM',
+                'Loại': 'BTP' if len(stages) == 2 or not is_root else 'THÀNH PHẨM',
                 'Tên sản phẩm': first_btp_name,
                 'SL SP': 1,
                 'ĐVT sp': default_uom,
@@ -668,7 +668,7 @@ def build_erp_mbom_multi_level(items, customer_code="STV", mat_spec_code="S01", 
                 curr_short = next_short
                 curr_full = next_full
                 
-        return {'code': raw_code if len(stages) < 2 else curr_short, 'name': main_full_code, 'qty': it['qty'], 'uom': default_uom}
+        return {'code': raw_code if len(stages) != 2 else curr_short, 'name': main_full_code, 'qty': it['qty'], 'uom': default_uom}
 
     for r_idx, root in enumerate(roots, 1):
         process_node(root, str(r_idx), parent_code="", child_seq=r_idx, is_root=True)
