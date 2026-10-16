@@ -468,8 +468,8 @@ def build_erp_mbom_multi_level(items, customer_code="STV", mat_spec_code="S01", 
                 
                 final_btp_full = f"SG - {customer_code} - {raw_code}"
                 
-                # CHỈ TÁCH DÒNG BTP KHI CÓ ĐÚNG 2 CÔNG ĐOẠN (len(stages) == 2)
-                if len(stages) == 2:
+                # CHỈ TÁCH DÒNG TIÊU ĐỀ BTP KHI CHI TIẾT CÓ TỪ 2 CÔNG ĐOẠN TRỞ LÊN VÀ KHÔNG PHẢI CẤP BTP THẤP NHẤT (node_stt is not None)
+                if len(stages) >= 2 and node_stt is not None:
                     rows.append({
                         'STT': node_stt,
                         'QTSX': None,
@@ -486,9 +486,9 @@ def build_erp_mbom_multi_level(items, customer_code="STV", mat_spec_code="S01", 
                     first_row_stt = node_stt
                     
                 st0 = stages[0]
-                curr_btp_short = f"{raw_code}.01" if len(stages) == 2 else raw_code
-                curr_btp_full = f"SG - {customer_code} - {curr_btp_short}" if len(stages) == 2 else final_btp_full
-                curr_btp_name = f"{raw_code}{st0['suffix']}" if len(stages) == 2 else raw_code
+                curr_btp_short = f"{raw_code}.01" if len(stages) >= 2 else raw_code
+                curr_btp_full = f"SG - {customer_code} - {curr_btp_short}" if len(stages) >= 2 else final_btp_full
+                curr_btp_name = f"{raw_code}{st0['suffix']}" if len(stages) >= 2 else raw_code
                 
                 rows.append({
                     'STT': first_row_stt,
@@ -539,9 +539,9 @@ def build_erp_mbom_multi_level(items, customer_code="STV", mat_spec_code="S01", 
                     curr_btp_full = next_btp_full
                     curr_btp_name = next_btp_name
                     
-                return {'code': raw_code if len(stages) != 2 else curr_btp_short, 'name': final_btp_full, 'qty': it['qty'], 'uom': default_uom}
+                return {'code': raw_code if len(stages) < 2 else curr_btp_short, 'name': final_btp_full, 'qty': it['qty'], 'uom': default_uom}
             else:
-                return {'code': raw_code, 'name': raw_code, 'qty': it['qty'], 'uom': it['uom'] if it['uom'] else default_uom}
+                return {'code': raw_code, 'name': raw_desc, 'qty': it['qty'], 'uom': it['uom'] if it['uom'] else default_uom}
 
         # 2. TRƯỜNG HỢP MÃ CHA
         item_type = 'THÀNH PHẨM' if is_root else 'BTP'
