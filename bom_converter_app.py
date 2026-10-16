@@ -23,7 +23,7 @@ with st.sidebar:
     **Logic nghiệp vụ tích hợp:**
     - **Vùng cột `MỤC`**: Nhận diện động mọi cấp độ thụt lề Cha - Con (từ cột A đến trước `MÃ SỐ CHI TIẾT`).
     - **Khóa cứng 35 cột cố định**: Đối soát tuần tự 1-1 từ `MÃ SỐ CHI TIẾT` đến `Đóng gói (PK)`.
-    - **Tách dòng BTP đa công đoạn**: Chi tiết có từ 2 công đoạn trở lên được tách dòng tiêu đề BTP riêng phía trên các dòng định mức công đoạn.
+    - **Tách dòng BTP đúng 2 công đoạn**: Chi tiết có đúng 2 công đoạn được tách dòng tiêu đề BTP riêng phía trên.
     - **Đánh số STT đồng cấp**: Tự động đánh số STT cho toàn bộ BTP đồng cấp, ngoại trừ các BTP ở cấp thấp nhất trên toàn bộ file BOM.
     - **Chuẩn hóa Tên NVL cho BTP**: Khi NVL đầu vào là BTP, cột `Tên NVL` lấy đúng giá trị tại cột `Mã sản phẩm` của BTP đó.
     """)
@@ -468,7 +468,8 @@ def build_erp_mbom_multi_level(items, customer_code="STV", mat_spec_code="S01", 
                 
                 final_btp_full = f"SG - {customer_code} - {raw_code}"
                 
-                if len(stages) >= 2:
+                # CHỈ TÁCH DÒNG BTP KHI CÓ ĐÚNG 2 CÔNG ĐOẠN (len(stages) == 2)
+                if len(stages) == 2:
                     rows.append({
                         'STT': node_stt,
                         'QTSX': None,
@@ -485,9 +486,9 @@ def build_erp_mbom_multi_level(items, customer_code="STV", mat_spec_code="S01", 
                     first_row_stt = node_stt
                     
                 st0 = stages[0]
-                curr_btp_short = f"{raw_code}.01" if len(stages) > 1 else raw_code
-                curr_btp_full = f"SG - {customer_code} - {curr_btp_short}"
-                curr_btp_name = f"{raw_code}{st0['suffix']}" if len(stages) > 1 else raw_code
+                curr_btp_short = f"{raw_code}.01" if len(stages) >= 2 else raw_code
+                curr_btp_full = f"SG - {customer_code} - {curr_btp_short}" if len(stages) >= 2 else final_btp_full
+                curr_btp_name = f"{raw_code}{st0['suffix']}" if len(stages) >= 2 else raw_code
                 
                 rows.append({
                     'STT': first_row_stt,
@@ -512,7 +513,7 @@ def build_erp_mbom_multi_level(items, customer_code="STV", mat_spec_code="S01", 
                 for s_idx, st_next in enumerate(stages[1:], 2):
                     is_last_stage = (s_idx == len(stages))
                     next_btp_short = raw_code if is_last_stage else f"{raw_code}.0{s_idx}"
-                    next_btp_full = f"SG - {customer_code} - {next_btp_short}"
+                    next_btp_full = f"SG - {customer_code} - {next_btp_short}" if not is_last_stage else final_btp_full
                     next_btp_name = raw_code if is_last_stage else f"{raw_code}{st_next['suffix']}"
                     
                     rows.append({
@@ -523,7 +524,7 @@ def build_erp_mbom_multi_level(items, customer_code="STV", mat_spec_code="S01", 
                         'Tên sản phẩm': next_btp_name,
                         'SL SP': 1,
                         'ĐVT sp': default_uom,
-                        'Mã NVL': curr_btp_short,
+                        'Mã NVL': curr_btp_short if not is_last_stage else curr_btp_short,
                         'Phôi (mm)': None,
                         'Tên NVL': curr_btp_full,
                         'ĐVT (NVL)': default_uom,
@@ -538,9 +539,9 @@ def build_erp_mbom_multi_level(items, customer_code="STV", mat_spec_code="S01", 
                     curr_btp_full = next_btp_full
                     curr_btp_name = next_btp_name
                     
-                return {'code': curr_btp_short, 'name': curr_btp_full, 'qty': it['qty'], 'uom': default_uom}
+                return {'code': raw_code if len(stages) < 2 else curr_btp_short, 'name': final_btp_full, 'qty': it['qty'], 'uom': default_uom}
             else:
-                return {'code': raw_code, 'name': raw_desc, 'qty': it['qty'], 'uom': it['uom'] if it['uom'] else default_uom}
+                return {'code': raw_code, 'name': raw_code, 'qty': it['qty'], 'uom': it['uom'] if it['uom'] else default_uom}
 
         # 2. TRƯỜNG HỢP MÃ CHA
         item_type = 'THÀNH PHẨM' if is_root else 'BTP'
@@ -562,7 +563,8 @@ def build_erp_mbom_multi_level(items, customer_code="STV", mat_spec_code="S01", 
             'Số Kg/NVL': None
         })
         
-        if len(stages) > 1:
+        # CHỈ TÁCH DÒNG BTP KHI CÓ ĐÚNG 2 CÔNG ĐOẠN (len(stages) == 2)
+        if len(stages) == 2:
             st0 = stages[0]
             first_btp_short = f"{raw_code}.01"
             first_btp_full = f"SG - {customer_code} - {first_btp_short}"
@@ -602,7 +604,7 @@ def build_erp_mbom_multi_level(items, customer_code="STV", mat_spec_code="S01", 
                 'STT': None,
                 'QTSX': st0['qtsx'],
                 'Mã sản phẩm': first_btp_full,
-                'Loại': 'BTP' if len(stages) > 1 or not is_root else 'THÀNH PHẨM',
+                'Loại': 'BTP' if len(stages) >= 2 or not is_root else 'THÀNH PHẨM',
                 'Tên sản phẩm': first_btp_name,
                 'SL SP': 1,
                 'ĐVT sp': default_uom,
@@ -640,7 +642,7 @@ def build_erp_mbom_multi_level(items, customer_code="STV", mat_spec_code="S01", 
                     next_type = 'THÀNH PHẨM'
                 else:
                     next_short = f"{curr_short}.01"
-                    next_full = f"SG - {customer_code} - {next_short}"
+                    next_full = f"SG - {customer_code} - {next_short}" if not is_last else main_full_code
                     next_name = f"{raw_desc}{st_next['suffix']}"
                     next_type = 'BTP'
                     
@@ -666,7 +668,7 @@ def build_erp_mbom_multi_level(items, customer_code="STV", mat_spec_code="S01", 
                 curr_short = next_short
                 curr_full = next_full
                 
-        return {'code': raw_code, 'name': main_full_code, 'qty': it['qty'], 'uom': default_uom}
+        return {'code': raw_code if len(stages) < 2 else curr_short, 'name': main_full_code, 'qty': it['qty'], 'uom': default_uom}
 
     for r_idx, root in enumerate(roots, 1):
         process_node(root, str(r_idx), parent_code="", child_seq=r_idx, is_root=True)
